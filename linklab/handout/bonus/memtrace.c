@@ -135,6 +135,7 @@ void* realloc(void* ptr, size_t size) {
         free_flag = 0;
     }
     else {
+        dealloc(list, ptr);
         res = reallocp(ptr, size);
         LOG_REALLOC(ptr, size, res);
     }

@@ -183,9 +183,11 @@ void free(void* ptr) {
 
     LOG_FREE(ptr);
 
-    if (dealloc(list, ptr) != NULL) {
+    item* dealloc_checker = dealloc(list, ptr);
+
+    if (dealloc_checker != NULL) {
         freep(ptr);
-        n_freeb += dealloc(list, ptr)->size;
+        n_freeb += dealloc_checker->size;
     }
     
 
