@@ -74,14 +74,14 @@ static void* coalesce(void* bp)
         PUT(HDRP(bp), PACK(size, 0)); 
         PUT(FTRP(bp), PACK(size, 0));
 
-        PUT(NEXTptr(bp), GET(NEXTptr(NEXT_BLKP(bp))));
+        PUT(NEXTptr(bp), NEXTptr(NEXT_BLKP(bp)));
     }
     else if (!prev_alloc && next_alloc) {
         size += GET_SIZE(HDRP(PREV_BLKP(bp)));
         PUT(FTRP(bp), PACK(size, 0));
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
 
-        PUT(NEXTptr(PREV_BLKP(bp)), GET(NEXTptr(bp)));
+        PUT(NEXTptr(PREV_BLKP(bp)), NEXTptr(bp));
         bp = PREV_BLKP(bp);
     }
     else {
@@ -89,7 +89,7 @@ static void* coalesce(void* bp)
         PUT(HDRP(PREV_BLKP(bp)), PACK(size, 0));
         PUT(FTRP(NEXT_BLKP(bp)), PACK(size, 0));
 
-        PUT(NEXTptr(PREV_BLKP(bp)), GET(NEXTptr(NEXT_BLKP(bp))));
+        PUT(NEXTptr(PREV_BLKP(bp)), NEXTptr(NEXT_BLKP(bp)));
 
         bp = PREV_BLKP(bp);
     }
@@ -112,6 +112,8 @@ static void* extend_heap(size_t words)
     PUT(PREVptr(bp), prev);
     prev = bp;
 
+    if (rootnext == heap_listp) { printf("%d ", GET(NEXTptr(bp))==heap_listp);  rootnext = bp; }
+
     return coalesce(bp);
 }
 
@@ -133,8 +135,8 @@ static void place(void* bp, size_t asize)
     size_t csize = GET_SIZE(HDRP(bp));
     if ((csize - asize) >= (2 * DSIZE)) 
     {
-        int thisnext = GET(NEXTptr(bp));
-        int thisprev = GET(PREVptr(bp));
+        char* thisnext = NEXTptr(bp);
+        char* thisprev = PREVptr(bp);
         char* curr = bp;
 
         PUT(HDRP(bp), PACK(asize, 1));
@@ -148,10 +150,10 @@ static void place(void* bp, size_t asize)
 
         if (curr == rootnext) rootnext = bp;
 
-        if (thisprev != (int)heap_listp) 
+        if (thisprev != heap_listp) 
             PUT(NEXTptr(thisprev), bp);
 
-        if (thisnext != (int)heap_listp) 
+        if (thisnext != heap_listp) 
             PUT(PREVptr(thisnext), bp);
         else 
             prev = bp;
@@ -235,7 +237,7 @@ void mm_free(void *ptr)
     PUT(FTRP(ptr), PACK(size, 0)); 
     if ( GET_ALLOC(PREV_BLKP(ptr)) && GET_ALLOC(NEXT_BLKP(ptr)) ) 
     {
-        int currnext = GET(rootnext);
+        char* currnext = rootnext;
         PUT(NEXTptr(ptr), currnext);
         PUT(PREVptr(ptr), heap_listp);
         PUT(PREVptr(currnext), ptr);
@@ -243,43 +245,43 @@ void mm_free(void *ptr)
     }
     else if (!GET_ALLOC(PREV_BLKP(ptr)) && GET_ALLOC(NEXT_BLKP(ptr)))
     {
-        int currnext = GET(rootnext);
+        char* currnext = rootnext;
         PUT(NEXTptr(ptr), currnext);
         PUT(NEXTptr(PREV_BLKP(ptr)), ptr);
 
         PUT(PREVptr(PREV_BLKP(ptr)), heap_listp);
-        PUT(PREVptr(ptr), GET(PREV_BLKP(ptr)));
+        PUT(PREVptr(ptr), PREV_BLKP(ptr));
         PUT(PREVptr(currnext), ptr);
 
-        rootnext = (char*)GET(PREV_BLKP(ptr));
+        rootnext = PREV_BLKP(ptr);
         coalesce(ptr);
     }
     else if (GET_ALLOC(PREV_BLKP(ptr)) && !GET_ALLOC(NEXT_BLKP(ptr)))
     {
-        int currnext = GET(rootnext);
-        PUT(NEXTptr(ptr), GET(NEXT_BLKP(ptr)));
+        char* currnext = rootnext;
+        PUT(NEXTptr(ptr), NEXT_BLKP(ptr));
         PUT(NEXTptr(NEXT_BLKP(ptr)), currnext);
 
         PUT(PREVptr(NEXT_BLKP(ptr)), ptr);
         PUT(PREVptr(ptr), heap_listp);
-        PUT(PREVptr(currnext), GET(NEXT_BLKP(ptr)));
+        PUT(PREVptr(currnext), NEXT_BLKP(ptr));
 
         rootnext = ptr;
         coalesce(ptr);
     }
     else if (!GET_ALLOC(PREV_BLKP(ptr)) && !GET_ALLOC(NEXT_BLKP(ptr)))
     {
-        int currnext = GET(rootnext);
-        PUT(NEXTptr(ptr), GET(NEXT_BLKP(ptr)));
+        char* currnext = rootnext;
+        PUT(NEXTptr(ptr), NEXT_BLKP(ptr));
         PUT(NEXTptr(NEXT_BLKP(ptr)), currnext);
         PUT(NEXTptr(PREV_BLKP(ptr)), ptr);
 
         PUT(PREVptr(PREV_BLKP(ptr)), heap_listp);
-        PUT(PREVptr(ptr), GET(PREV_BLKP(ptr)));
+        PUT(PREVptr(ptr), PREV_BLKP(ptr));
         PUT(PREVptr(NEXT_BLKP(ptr)), ptr);
-        PUT(PREVptr(currnext), GET(NEXT_BLKP(ptr)));
+        PUT(PREVptr(currnext), NEXT_BLKP(ptr));
 
-        rootnext = (char*)GET(PREV_BLKP(ptr));
+        rootnext = PREV_BLKP(ptr);
         coalesce(ptr);
     }
 
