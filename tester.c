@@ -148,10 +148,10 @@ static void place(void* bp, size_t asize)
 
         if (curr == rootnext) rootnext = bp;
 
-        if (thisprev != heap_listp) 
+        if (thisprev != (int)heap_listp) 
             PUT(NEXTptr(thisprev), bp);
 
-        if (thisnext != heap_listp) 
+        if (thisnext != (int)heap_listp) 
             PUT(PREVptr(thisnext), bp);
         else 
             prev = bp;
@@ -251,7 +251,7 @@ void mm_free(void *ptr)
         PUT(PREVptr(ptr), GET(PREV_BLKP(ptr)));
         PUT(PREVptr(currnext), ptr);
 
-        rootnext = GET(PREV_BLKP(ptr));
+        rootnext = (char*)GET(PREV_BLKP(ptr));
         coalesce(ptr);
     }
     else if (GET_ALLOC(PREV_BLKP(ptr)) && !GET_ALLOC(NEXT_BLKP(ptr)))
@@ -279,7 +279,7 @@ void mm_free(void *ptr)
         PUT(PREVptr(NEXT_BLKP(ptr)), ptr);
         PUT(PREVptr(currnext), GET(NEXT_BLKP(ptr)));
 
-        rootnext = GET(PREV_BLKP(ptr));
+        rootnext = (char*)GET(PREV_BLKP(ptr));
         coalesce(ptr);
     }
 
