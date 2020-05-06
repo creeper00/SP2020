@@ -343,24 +343,19 @@ void mm_free(void* ptr)
  */
 
 void* mm_realloc(void* bp, size_t size) {
-    if ((int)size == 0) {
+    if (size == 0) 
+    {
         mm_free(bp);
         return NULL;
     }
-    else if (size > 0) {
-        size_t oldsize = GET_SIZE(HDRP(bp));
-        size_t newsize = size + 2 * WSIZE; // 2 words for header and footer
-        /*if newsize is less than oldsize then we just return bp */
-        if (newsize <= oldsize) {
-            return bp;
-        }
-        /*if newsize is greater than oldsize */
+    else 
+    {
+        size_t olds = GET_SIZE(HDRP(bp));
+        size_t news = size + 2 * WSIZE; 
+        if (news <= olds) return bp;
         else {
-            size_t next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-            size_t csize;
-            /* next block is free and the size of the two blocks is greater than or equal the new size  */
-            /* then we only need to combine both the blocks  */
-            if (!next_alloc && ((csize = oldsize + GET_SIZE(HDRP(NEXT_BLKP(bp))))) >= newsize) {
+            size_t csize = olds + GET_SIZE(HDRP(NEXT_BLKP(bp)));
+            if (!GET_ALLOC(HDRP(NEXT_BLKP(bp))) && csize >= news) {
                 if (GET(PREVptr(NEXT_BLKP(bp))) != (int)heap_listp) PUT(NEXTptr(GET(PREVptr(NEXT_BLKP(bp)))), GET(NEXTptr(NEXT_BLKP(bp))));
                 else rootnext = GET(NEXTptr(NEXT_BLKP(bp)));
                 if (GET(NEXTptr(NEXT_BLKP(bp))) != (int)heap_listp) PUT(PREVptr(GET(NEXTptr(NEXT_BLKP(bp)))), GET(PREVptr(NEXT_BLKP(bp))));
@@ -369,14 +364,12 @@ void* mm_realloc(void* bp, size_t size) {
                 return bp;
             }
             else {
-                void* new_ptr = mm_malloc(newsize);
-                place(new_ptr, newsize);
-                memcpy(new_ptr, bp, newsize);
+                void* newptr = mm_malloc(news);
+                place(newptr, news);
+                memcpy(newptr, bp, news);
                 mm_free(bp);
-                return new_ptr;
+                return newptr;
             }
         }
     }
-    else
-        return NULL;
 }
