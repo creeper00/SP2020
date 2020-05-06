@@ -250,11 +250,11 @@ void* mm_realloc(void* ptr, size_t size) {
             return ptr;
         }
         else {
-            void* new_ptr = mm_malloc(news);
-            place(new_ptr, news);
-            memcpy(new_ptr, ptr, news);
+            void* newptr = mm_malloc(news);
+            place(newptr, news);
+            memcpy(newptr, ptr, news);
             mm_free(ptr);
-            return new_ptr;
+            return newptr;
         }
     }
 }
