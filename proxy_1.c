@@ -104,7 +104,12 @@ void parse_request(char request[MAXLINE], Request* req) {
 }
 
 void assemble_request(Request* req, char request[MAXLINE]) {
-    sprintf(req->method, req->query, req->ver, "%s %s %s", request);
+    char host[MAXLINE];
+    char user[MAXLINE];
+    sprintf(host, "Host: %s\r\n", req->name);
+    sprintf(user, "User-Agent: %s\r\n", user_agent_hdr);
+    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->ver);
+    sprintf(request, "%s%s%s%s%s", request, host, user, "Connection: close\r\n", "Proxy-Connection: close\r\n");
 }
 
 void initialize_struct(Request* req) {
