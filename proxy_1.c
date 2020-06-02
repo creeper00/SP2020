@@ -69,10 +69,11 @@ void handle_client(void* vargp) {
     clientfd = Open_clientfd(rq->name, rq->port);
 
     Rio_readinitb(&srio, clientfd);
-    Rio_writen(clientfd, request, strlen(request));
+    Rio_writen(clientfd, request, MAXLINE);
     while ((n = Rio_readlineb(&srio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
     }
+    Close(clientfd);
     Close(connfd);
 }
 
