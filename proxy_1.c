@@ -10,7 +10,6 @@ typedef struct {
     char method[MAXLINE];
     char name[MAXLINE];
     char ver[MAXLINE];
-    char header[MAXLINE];
     char port[MAXLINE];
     char query[MAXLINE];
 }Request;
@@ -29,8 +28,7 @@ int main(int argc, char** argv) {
 
     int listenfd, connfd, clientlen;
     struct sockaddr_in clientaddr;
-    struct hostent* hp; 
-    char* haddrp;
+    char haddrp[MAXLINE];;
     char client_port[MAXLINE];
     listenfd = Open_listenfd(argv[1]); 
 
@@ -38,7 +36,6 @@ int main(int argc, char** argv) {
         clientlen = sizeof(clientaddr);
 
         connfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); //connect
-        hp = Gethostbyaddr((const char*)&clientaddr.sin_addr.s_addr,sizeof(clientaddr.sin_addr.s_addr), AF_INET); // find host
         Getnameinfo((SA*)&clientaddr, clientlen, haddrp, MAXLINE, client_port, MAXLINE, 0);
         
         pthread_t tid;
@@ -114,7 +111,6 @@ void assemble_request(Request* req, char request[MAXLINE]) {
 
 void initialize_struct(Request* req) {
     for (int i = 0; i < MAXLINE; i++) {
-        req->header[i] = '\0';
         req->method[i] = '\0';
         req->name[i] = '\0';
         req->port[i] = '\0';
