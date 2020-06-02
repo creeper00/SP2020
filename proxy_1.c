@@ -94,28 +94,33 @@ void parse_request(char request[MAXLINE], Request* req) {
     char method[MAXLINE];
     char name[MAXLINE];
     char ver[MAXLINE];
+    int* port;
     sscanf(request, "%s %s %s", method, name, ver);
 
-    char* tmp1 = strstr(name, "//");
-    char* tmp2 = strstr(name, ":");
-    char* tmp3 = strstr(name, "/");
+    *port = 80; // default port is 80
 
-    if (tmp2) {
-        *tmp2 = '\0';
-        sscanf(tmp1 + 2, "%s", req->name);
-        sscanf(tmp3, "%s", req->query);
-        *tmp3 = '\0';
-        sscanf(tmp2 + 1, "%s", req->port);
-        *tmp3 = '/';
+     // find hostname
+    char* pos = strstr(name, "//");
+
+    // does port exist?
+    char* pos2 = strstr(pos, ":");
+    if (pos2) {
+        *pos2 = '\0';
+        sscanf(pos, "%s", req->name); // read hostname
+        sscanf(pos2 + 1, "%d%s", port, req->query); // read port and path
     }
     else {
-        sscanf(tmp3, "%s", req->query);
-        *tmp3 = '\0';
-        sscanf(tmp1 + 2, "%s", req->name);
-        sscanf("80", "%s", req->port);
-        *tmp3 = '/';
+        pos2 = strstr(pos, "/"); // path
+        if (pos2) {
+            *pos2 = '\0';
+            sscanf(pos, "%s", req->name); // read hostname
+            *pos2 = '/';
+            sscanf(pos2, "%s", req->query); // read path
+        }
+        else sscanf(pos, "%s", req->name);
     }
-    sscanf("HTTP/1.0", "%s", req->ver);
+
+    sprintf(req->port, "%d", *port);
 }
 
 void assemble_request(Request* req, char request[MAXLINE]) {
