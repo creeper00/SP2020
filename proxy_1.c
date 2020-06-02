@@ -52,27 +52,39 @@ int main(int argc, char** argv) {
 void handle_client(void* vargp) {
     int connfd = *((int*)vargp);
     Pthread_detach(pthread_self());
-
-    size_t n;
+    int lines = 0;
     char buf[MAXLINE], request[MAXLINE], response[MAXLINE];
     rio_t rio, srio;
     int clientfd;
 
     Rio_readinitb(&rio, connfd);
-    Rio_readlineb(&rio, buf, MAXLINE);
 
     Request* rq = Malloc(sizeof(Request));
     initialize_struct(rq);
-    parse_request(buf, rq);
+
+    buf[0] = 0;
+    while (strncmp(buf, "\r\n", 2)) {
+        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
+        lines++;
+        if (lines == 1) {
+            parse_request(buf, rq);
+            sprintf(rq->header, "%sHost: %s:%s\r\n", rq->header, rq->hostname, rq->port);
+            sprintf(rq->header, "%s%s", rq->header, user_agent_hdr);
+            sprintf(rq->header, "%sConnection: close\r\n", rq->header);
+            sprintf(rq->header, "%sProxy-Connection: close\r\n", rq->header);
+        }
+        else if (strncmp(buf, "Proxy-Connection:", 17) && strncmp(buf, "Host:", 5) && strncmp(buf, "User-Agent:", 11)) {
+            sprintf(rq->header, "%s%s", rq->header, buf);
+        }
+    }
+    if (lines <= 0) {
+        return;
+    }
     assemble_request(rq, request);
 
     clientfd = Open_clientfd(rq->hostname, rq->port);
 
-    Rio_readinitb(&srio, clientfd);
-    Rio_writen(clientfd, request, MAXLINE);
-    while ((n = Rio_readlineb(&srio, response, MAXLINE)) > 0) {
-        Rio_writen(clientfd, response, n);
-    }
+    get_from_server(request, clientfd, connfd);
     Close(clientfd);
     Close(connfd);
 }
@@ -114,12 +126,8 @@ void parse_request(char request[MAXLINE], Request* req) {
 }
 
 void assemble_request(Request* req, char request[MAXLINE]) {
-    char host[MAXLINE];
-    char user[MAXLINE];
-    sprintf(host, "Host: %s%s\r\n", req->name, req->port);
-    sprintf(user, "User-Agent: %s\r\n", user_agent_hdr);
-    sprintf(request, "GET %s HTTP/1.0\r\n", req->query);
-    sprintf(request, "%s%s%s%s%s", request, host, user, "Connection: close\r\n", "Proxy-Connection: close\r\n");
+    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
+    sprintf(request, "%s%s", request, req->header);
 }
 
 void initialize_struct(Request* req) {
@@ -129,5 +137,17 @@ void initialize_struct(Request* req) {
         req->port[i] = '\0';
         req->query[i] = '\0';
         req->version[i] = '\0';
+    }
+}
+
+void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
+    char response[MAXLINE];
+    size_t n;
+    rio_t rio_to_server;
+    Rio_readinitb(&rio_to_server, serverfd);
+
+    Rio_writen(serverfd, request, strlen(request));
+    while ((n = Rio_readnb(&rio_to_server, response, MAXLINE)) > 0) {
+        Rio_writen(clientfd, response, n);
     }
 }
