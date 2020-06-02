@@ -24,6 +24,10 @@ void print_struct(Request* req);
 
  
 int main(int argc, char** argv) {
+    if (argc != 2) {
+        printf("Usage: proxy <port>\n\nwhere <port> is listening port number between 4500 and 65000\n");
+        return 0;
+    }
     printf("%s", user_agent_hdr);
 
     int listenfd, connfd, clientlen;
@@ -57,7 +61,7 @@ void handle_client(void* vargp) {
     Rio_readinitb(&rio, connfd);
     Rio_readlineb(&rio, buf, MAXLINE);
 
-    Request* rq;
+    Request* rq = Malloc(sizeof(Request));
     initialize_struct(rq);
     parse_request(buf, rq);
     assemble_request(rq, request);
