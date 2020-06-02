@@ -8,8 +8,8 @@
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 typedef struct {
     char method[MAXLINE];
-    char name[MAXLINE];
-    char ver[MAXLINE];
+    char hostname[MAXLINE];
+    char version[MAXLINE];
     char port[MAXLINE];
     char query[MAXLINE];
 }Request;
@@ -66,7 +66,7 @@ void handle_client(void* vargp) {
     parse_request(buf, rq);
     assemble_request(rq, request);
 
-    clientfd = Open_clientfd(rq->name, rq->port);
+    clientfd = Open_clientfd(rq->hostname, rq->port);
 
     Rio_readinitb(&srio, clientfd);
     Rio_writen(clientfd, request, MAXLINE);
@@ -78,36 +78,39 @@ void handle_client(void* vargp) {
 }
 
 void parse_request(char request[MAXLINE], Request* req) {
-    char method[MAXLINE];
-    char name[MAXLINE];
-    char ver[MAXLINE];
-    int* port;
-    sscanf(request, "%s %s %s", method, name, ver);
-
-    *port = 80; // default port is 80
-
-     // find hostname
-    char* pos = strstr(name, "//");
-
-    // does port exist?
-    char* pos2 = strstr(pos, ":");
-    if (pos2) {
-        *pos2 = '\0';
-        sscanf(pos, "%s", req->name); // read hostname
-        sscanf(pos2 + 1, "%d%s", port, req->query); // read port and path
+    char uri[MAXLINE];
+    char version[MAXLINE];
+    sscanf(request, "%s %s %s", req->method, uri, version);
+    int uri_len = strlen(uri);
+    strtok(uri, "/");
+    char* url;
+    if (strncmp(uri, "http", 4)) {
+        url = malloc(sizeof(char) * (strlen(uri) + 1));
+        strncpy(url, uri, strlen(uri) + 1);
     }
     else {
-        pos2 = strstr(pos, "/"); // path
-        if (pos2) {
-            *pos2 = '\0';
-            sscanf(pos, "%s", req->name); // read hostname
-            *pos2 = '/';
-            sscanf(pos2, "%s", req->query); // read path
-        }
-        else sscanf(pos, "%s", req->name);
+        url = strtok(uri + strlen(uri) + 1, "/ ");
     }
-
-    sprintf(req->port, "%d", *port);
+    if (strlen(url) + strlen(uri) + 2 < uri_len) {
+        char* query = url + strlen(url) + 1;
+        sprintf(req->query, "/%s", query);
+    }
+    else {
+        strncpy(req->query, "/", 2);
+    }
+    if (strstr(url, ":")) {
+        char* hostname = strtok(url, ":");
+        char* port = hostname + strlen(hostname) + 1;
+        sprintf(req->hostname, "%s", hostname);
+        sprintf(req->port, "%s", port);
+    }
+    else {
+        sprintf(req->hostname, "%s", url);
+        strncpy(req->port, "80", 3);
+    }
+    if (!strncmp(version, "HTTP/1.1", 8)) {
+        strncpy(req->version, "HTTP/1.0", 9);
+    }
 }
 
 void assemble_request(Request* req, char request[MAXLINE]) {
@@ -122,9 +125,9 @@ void assemble_request(Request* req, char request[MAXLINE]) {
 void initialize_struct(Request* req) {
     for (int i = 0; i < MAXLINE; i++) {
         req->method[i] = '\0';
-        req->name[i] = '\0';
+        req->hostname[i] = '\0';
         req->port[i] = '\0';
         req->query[i] = '\0';
-        req->ver[i] = '\0';
+        req->version[i] = '\0';
     }
 }
