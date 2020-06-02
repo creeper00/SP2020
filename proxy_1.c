@@ -12,6 +12,7 @@ typedef struct {
     char version[MAXLINE];
     char port[MAXLINE];
     char query[MAXLINE];
+    char header[MAXLINE];
 }Request;
 
 void handle_client(void* vargp);
@@ -90,39 +91,31 @@ void handle_client(void* vargp) {
 }
 
 void parse_request(char request[MAXLINE], Request* req) {
-    char uri[MAXLINE];
-    char version[MAXLINE];
-    sscanf(request, "%s %s %s", req->method, uri, version);
-    int uri_len = strlen(uri);
-    strtok(uri, "/");
-    char* url;
-    if (strncmp(uri, "http", 4)) {
-        url = malloc(sizeof(char) * (strlen(uri) + 1));
-        strncpy(url, uri, strlen(uri) + 1);
+    char method[MAXLINE];
+    char name[MAXLINE];
+    char ver[MAXLINE];
+    sscanf(request, "%s %s %s", method, name, ver);
+
+    char* tmp1 = strstr(name, "//");
+    char* tmp2 = strstr(name, ":");
+    char* tmp3 = strstr(name, "/");
+
+    if (tmp2) {
+        *tmp2 = '\0';
+        sscanf(tmp1 + 2, "%s", req->name);
+        sscanf(tmp3, "%s", req->query);
+        *tmp3 = '\0';
+        sscanf(tmp2 + 1, "%s", req->port);
+        *tmp3 = '/';
     }
     else {
-        url = strtok(uri + strlen(uri) + 1, "/ ");
+        sscanf(tmp3, "%s", req->query);
+        *tmp3 = '\0';
+        sscanf(tmp1 + 2, "%s", req->name);
+        sscanf("80", "%s", req->port);
+        *tmp3 = '/';
     }
-    if (strlen(url) + strlen(uri) + 2 < uri_len) {
-        char* query = url + strlen(url) + 1;
-        sprintf(req->query, "/%s", query);
-    }
-    else {
-        strncpy(req->query, "/", 2);
-    }
-    if (strstr(url, ":")) {
-        char* hostname = strtok(url, ":");
-        char* port = hostname + strlen(hostname) + 1;
-        sprintf(req->hostname, "%s", hostname);
-        sprintf(req->port, "%s", port);
-    }
-    else {
-        sprintf(req->hostname, "%s", url);
-        strncpy(req->port, "80", 3);
-    }
-    if (!strncmp(version, "HTTP/1.1", 8)) {
-        strncpy(req->version, "HTTP/1.0", 9);
-    }
+    sscanf("HTTP/1.0", "%s", req->ver);
 }
 
 void assemble_request(Request* req, char request[MAXLINE]) {
@@ -137,6 +130,7 @@ void initialize_struct(Request* req) {
         req->port[i] = '\0';
         req->query[i] = '\0';
         req->version[i] = '\0';
+        req->header[i] = '\0';
     }
 }
 
