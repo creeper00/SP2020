@@ -18,7 +18,6 @@ typedef struct {
 void handle_client(void* vargp);
 void initialize_struct(Request* req);
 void parse_request(char request[MAXLINE], Request* req);
-void assemble_request(Request* req, char request[MAXLINE]);
 int get_from_cache(char request[MAXLINE], int clientfd);
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd);
 void print_struct(Request* req);
@@ -53,7 +52,7 @@ int main(int argc, char** argv) {
 void handle_client(void* vargp) {
     int connfd = *((int*)vargp);
     Pthread_detach(pthread_self());
-    int lines = 0;
+    int check = 0;
     char buf[MAXLINE], request[MAXLINE], response[MAXLINE];
     rio_t rio, srio;
     int clientfd;
@@ -62,17 +61,24 @@ void handle_client(void* vargp) {
 
     Request* rq = Malloc(sizeof(Request));
     initialize_struct(rq);
-    Rio_readlineb(&rio, buf, MAXLINE);
-    parse_request(buf, rq);
-    sprintf(rq->header, "%sHost: %s:%s\r\n", rq->header, rq->hostname, rq->port);
-    sprintf(rq->header, "%s%s", rq->header, user_agent_hdr);
-    sprintf(rq->header, "%sConnection: close\r\n", rq->header);
-    sprintf(rq->header, "%sProxy-Connection: close\r\n", rq->header);
-    
-    if (lines <= 0) {
-        return;
+    char header[MAXLINE];
+    buf[0] = 0;
+    while (strncmp(buf, "\r\n", 2)) {
+        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
+        if (check == 0) {
+            parse_request(buf, rq);
+            sprintf(header, "Host: %s:%s\r\n",rq->hostname, rq->port);
+            sprintf(header, "%s%s", header, user_agent_hdr);
+            sprintf(header, "%s%s%s", header, "Connection: close\r\n", "Proxy-Connection: close\r\n");
+        }
+        else if (strncmp(buf, "Proxy-Connection:", 17) && strncmp(buf, "Host:", 5) && strncmp(buf, "User-Agent:", 11)) {
+            sprintf(header, "%s%s", header, buf);
+        }
+        check++;
     }
-    assemble_request(rq, request);
+
+    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
+    sprintf(request, "%s%s", request, header);
 
     clientfd = Open_clientfd(rq->hostname, rq->port);
 
@@ -109,10 +115,6 @@ void parse_request(char request[MAXLINE], Request* req) {
     sscanf("HTTP/1.0", "%s", req->version);
 }
 
-void assemble_request(Request* req, char request[MAXLINE]) {
-    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
-    sprintf(request, "%s%s", request, req->header);
-}
 
 void initialize_struct(Request* req) {
     for (int i = 0; i < MAXLINE; i++) {
