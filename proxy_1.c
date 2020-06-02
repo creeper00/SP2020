@@ -62,12 +62,25 @@ void handle_client(void* vargp) {
 
     Request* rq = Malloc(sizeof(Request));
     initialize_struct(rq);
-    char header[MAXLINE];
+
     buf[0] = 0;
-    Rio_readlineb(&rio, buf, MAXLINE);
-    parse_request(buf, rq);
-    sprintf(header, "Host: %s:%s\r\n%s%s%s", rq->hostname, rq->port, user_agent_hdr,
-        "Connection: close\r\n", "Proxy-Connection: close\r\n);
+    while (strncmp(buf, "\r\n", 2)) {
+        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
+        lines++;
+        if (lines == 1) {
+            parse_request(buf, rq);
+            sprintf(rq->header, "%sHost: %s:%s\r\n", rq->header, rq->hostname, rq->port);
+            sprintf(rq->header, "%s%s", rq->header, user_agent_hdr);
+            sprintf(rq->header, "%sConnection: close\r\n", rq->header);
+            sprintf(rq->header, "%sProxy-Connection: close\r\n", rq->header);
+        }
+        else if (strncmp(buf, "Proxy-Connection:", 17) && strncmp(buf, "Host:", 5) && strncmp(buf, "User-Agent:", 11)) {
+            sprintf(rq->header, "%s%s", rq->header, buf);
+        }
+    }
+    if (lines <= 0) {
+        return;
+    }
     assemble_request(rq, request);
 
     clientfd = Open_clientfd(rq->hostname, rq->port);
