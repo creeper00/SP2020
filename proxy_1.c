@@ -5,7 +5,7 @@
 #define MAX_OBJECT_SIZE 102400
 
 /* You won't lose style points for including this long line in your code */
-static const char* user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 typedef struct {
     char method[MAXLINE];
     char hostname[MAXLINE];
@@ -15,22 +15,21 @@ typedef struct {
     char header[MAXLINE];
 }Request;
 
-typedef struct CachedItem CachedItem;
-
-struct CachedItem {
-    char request[MAXLINE];
-    size_t response_size;
-    char* response;
+typedef struct {
+    char* obj;
+    char name[MAXLINE];
+    size_t size;
     struct CachedItem* next;
-};
+}CachedItem; 
 
 typedef struct {
-    size_t size;
-    pthread_rwlock_t* lock;
-    CachedItem* list;
-} CacheList;
+    size_t totalsize;
+    struct CachedItem* start;
+}CacheList;
 
-CacheList* cache_list = NULL;
+struct CacheList* clist=NULL;
+struct CacheItem* nw = NULL;
+struct CacheItem* adder = NULL;
 
 void handle_client(void* vargp);
 void initialize_struct(Request* req);
@@ -39,29 +38,37 @@ int get_from_cache(char request[MAXLINE], int clientfd);
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd);
 void print_struct(Request* req);
 
+void init_cache(CacheList* list);
+//void cache_URL(CachedItem* cach, CacheList* list);
+void evict(CacheList* list);
+struct CachedItem* find(CachedItem cach, CacheList* list);
+void move_to_front(char* URL, CacheList* list);
+void cache_destruct(CacheList* list);
 
+ 
 int main(int argc, char** argv) {
     if (argc != 2) {
         printf("Usage: proxy <port>\n\nwhere <port> is listening port number between 4500 and 65000\n");
         return 0;
     }
     printf("%s", user_agent_hdr);
+    init_cache(clist);
 
     int listenfd, connfd, clientlen;
     struct sockaddr_in clientaddr;
     char haddrp[MAXLINE];;
     char client_port[MAXLINE];
-    listenfd = Open_listenfd(argv[1]);
+    listenfd = Open_listenfd(argv[1]); 
 
     while (1) {
         clientlen = sizeof(clientaddr);
 
         connfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); //connect
         Getnameinfo((SA*)&clientaddr, clientlen, haddrp, MAXLINE, client_port, MAXLINE, 0);
-
+        
         pthread_t tid;
         Pthread_create(&tid, NULL, (void*)handle_client, &connfd);
-
+       
     }
     return 0;
 }
@@ -70,8 +77,9 @@ void handle_client(void* vargp) {
     int connfd = *((int*)vargp);
     Pthread_detach(pthread_self());
     int check = 0;
-    char buf[MAXLINE], request[MAXLINE], response[MAXLINE];
-    rio_t rio, srio;
+    char buf[MAXLINE], request[MAXLINE];
+    rio_t rio;
+    size_t n;
     int clientfd;
 
     Rio_readinitb(&rio, connfd);
@@ -80,11 +88,23 @@ void handle_client(void* vargp) {
     initialize_struct(rq);
     char header[MAXLINE];
     buf[0] = 0;
-    while (strncmp(buf, "\r\n", 2)) {
-        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
+    while ((n = Rio_readlineb(&rio, buf, MAXLINE)) > 0){
+        if (strncmp(buf, "\r\n", 2) == 0) break;
         if (check == 0) {
-            parse_request(buf, rq);
-            sprintf(header, "Host: %s:%s\r\n", rq->hostname, rq->port);
+            char name[MAXLINE];
+            char ver[MAXLINE];
+            sscanf(buf, "%s %s %s", req->method, name, ver);
+
+            if (clist != NULL) {
+                nw = find(name, clist);
+                if (nw != NULL) {
+                    move_to_front(nw, clist);
+                }
+                else adder->name = name;
+            }
+
+            parse_request(name, rq);
+            sprintf(header, "Host: %s:%s\r\n",rq->hostname, rq->port);
             sprintf(header, "%s%s", header, user_agent_hdr);
             sprintf(header, "%s%s%s", header, "Connection: close\r\n", "Proxy-Connection: close\r\n");
         }
@@ -94,15 +114,8 @@ void handle_client(void* vargp) {
         check++;
     }
 
-    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
+    sprintf(request, "%s %s %s\r\n", rq->method, rq->query, rq->version);
     sprintf(request, "%s%s", request, header);
-
-    if (get_from_cache(request_full, connfd)) {
-        printf("%s", request_full);
-        printf("Got from Cache\n");
-        Close(connfd);
-        return;
-    }
 
     clientfd = Open_clientfd(rq->hostname, rq->port);
 
@@ -112,16 +125,13 @@ void handle_client(void* vargp) {
 }
 
 void parse_request(char request[MAXLINE], Request* req) {
-    char name[MAXLINE];
-    char ver[MAXLINE];
-    sscanf(request, "%s %s %s", req->method, name, ver);
 
-    char* tmp1 = strstr(name, "//");
+    char* tmp1 = strstr(request, "//");
     char* tmp2 = strstr(tmp1, ":");
     char* tmp3;
     if (tmp2 != NULL) tmp3 = strstr(tmp2, "/");
-    else tmp3 = strstr(tmp1 + 2, "/");
-    if (tmp2 != NULL) {
+    else tmp3 = strstr(tmp1+2, "/");
+    if (tmp2!=NULL) {
         *tmp2 = '\0';
         sscanf(tmp1 + 2, "%s", req->hostname);
         sscanf(tmp3, "%s", req->query);
@@ -153,129 +163,65 @@ void initialize_struct(Request* req) {
 
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char response[MAXLINE];
-    char cachebuf[MAX_OBJECT_SIZE];
     size_t n;
-    size_t total_size = 0;
-    char save = 1;
-    rio_t rio_to_server;
-    Rio_readinitb(&rio_to_server, serverfd);
-
-    Rio_writen(serverfd, request, strlen(request));
-    while ((n = Rio_readnb(&rio_to_server, response, MAXLINE)) > 0) {
-        Rio_writen(clientfd, response, n);
-        if (total_size + n < MAX_OBJECT_SIZE) {
-            strncpy(cachebuf + total_size, response, n);
+    rio_t rio;
+    if (nw == NULL) {
+        Rio_readinitb(&rio, serverfd);
+        int first = 1;
+        adder->size = 0;
+        Rio_writen(serverfd, request, strlen(request));
+        while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
+            Rio_writen(clientfd, response, n);
+            adder->size += n;
+            if (first) sprintf(adder->obj, "%s", response);
+            else sprintf(adder->obj, "%s%s", adder->obj, response);
         }
-        else {
-            save = 0;
+        if (clist->totalsize + adder->size <= MAX_CACHE_SIZE) {
+            cache_destruct(clist);
         }
-        total_size += n;
-    }
-    if (n == -1 && errno == ECONNRESET) {
-        return;
-    }
-    if (save) {
-        CachedItem* item = malloc(sizeof(CachedItem));
-        strncpy(item->request, request, strlen(request) + 1);
-        item->response_size = total_size + 1;
-        item->response = malloc(sizeof(char) * (total_size + 1));
-        strncpy(item->response, cachebuf, total_size + 1);
-        cache_insert(item, cache_list);
-    }
-}
-
-CacheList* cache_init() {
-    CacheList* cache = malloc(sizeof(CacheList));
-    cache->size = 0;
-    cache->lock = malloc(sizeof(pthread_rwlock_t));
-    pthread_rwlock_init(cache->lock, NULL);
-    cache->list = NULL;
-    return cache;
-}
-
-void cache_insert(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->lock);
-    while ((item->response_size) + (cache->size) >= MAX_CACHE_SIZE) {
-        evict(cache);
-    }
-    item->next = cache->list;
-    cache->list = item;
-    cache->size += item->response_size;
-    pthread_rwlock_unlock(cache->lock);
-}
-
-void evict(CacheList* cache) {
-    CachedItem* node = cache->list;
-    while (node && node->next && node->next->next) {
-        node = node->next;
-    }
-    if (node == NULL) {
-        return;
-    }
-
-    if (node->next == NULL) {
-        cache->list = NULL;
-        cache->size = 0;
+        adder->next = clist->start->next;
+        clist->start->next = adder;
+        clist->totalsize += adder->size;
+        adder = NULL;
     }
     else {
-        cache->size -= node->next->response_size;
-        free(node->next);
-        node->next = NULL;
+        Rio_writen(clientfd, nw->obj, nw->size);
+        nw = NULL;
     }
 }
 
-CachedItem* find(char request[MAXLINE], CacheList* cache) {
-    if (cache->list == NULL) {
-        return NULL;
-    }
-    pthread_rwlock_rdlock(cache->lock);
-    CachedItem* ret = NULL;
-    CachedItem* node = cache->list;
-    if (!strncmp(node->request, request, strlen(request))) {
-        ret = node;
-        node = NULL;
-    }
-    while (node && node->next) {
-        CachedItem* target = node->next;
-        if (!strncmp(target->request, request, strlen(request))) {
-            ret = target;
-            break;
-        }
-        node = node->next;
-    }
-    pthread_rwlock_unlock(cache->lock);
-    if (ret != NULL && node != NULL) {
-        move_to_front(node, cache);
-    }
-    return ret;
+void init_cache(CacheList* list) {
+    list->start->obj = NULL;
+    list->start->size = 0;
+    list->start->name[0] = '\0';
+    list->start->next = NULL;
+    list->totalsize = 0;
 }
 
-void move_to_front(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->lock);
-    CachedItem* target = item->next;
-    item->next = target->next;
-    target->next = cache->list;
-    cache->list = target;
-    pthread_rwlock_unlock(cache->lock);
+struct CachedItem* find(char* URL, CacheList* list) {
+    struct CacheItem* res = list->start->next;
+    while (res != NULL) {
+        if (!strcmp(res->name, URL)) return res;
+        res = res->next;
+    }
 }
 
-void cache_destruct(CacheList* cache) {
-    CachedItem* node = cache->list;
-    while (node) {
-        CachedItem* next = node->next;
-        free(node);
-        node = next;
-    }
-    pthread_rwlock_destroy(cache->lock);
-    free(cache->lock);
-    free(cache);
+void move_to_front(CachedItem cach, CacheList* list) {
+    cach->next = list->start->next;
+    list->start->next = cach;
 }
 
-int get_from_cache(char request[MAXLINE], int clientfd) {
-    CachedItem* item = NULL;
-    if ((item = find(request, cache_list)) != 0) {
-        Rio_writen(clientfd, item->response, item->response_size);
-        return 1;
+void evict(CacheList* list) {
+    struct CacheItem* res = list->start->next;
+    if (res == NULL) return;
+    if (res->next == NULL) {
+        list->totalsize = 0;
+        list->start->next = NULL;
+        return;
     }
-    return 0;
+    while (res->next->next != NULL) {
+        res = res->next;
+    }
+    list->totalsize -= res->next->size;
+    res->next = NULL;
 }
