@@ -18,26 +18,19 @@ typedef struct {
 typedef struct CachedItem CachedItem;
 
 struct CachedItem {
-    char name[MAXLINE];
-    size_t size;
+    char request[MAXLINE];
+    size_t response_size;
     char* response;
     struct CachedItem* next;
 };
 
 typedef struct {
-    size_t totalsize;
+    size_t size;
     pthread_rwlock_t* lock;
-    CachedItem* start;
+    CachedItem* list;
 } CacheList;
 
-CacheList* clist = NULL;
-
-CacheList* cache_init();
-void cache_insert(CachedItem* item, CacheList* cache);
-void evict(CacheList* cache);
-CachedItem* find(char request[MAXLINE], CacheList* cache);
-void move_to_front(CachedItem* item, CacheList* cache);
-void cache_destruct(CacheList* cache);
+CacheList* cache_list = NULL;
 
 void handle_client(void* vargp);
 void initialize_struct(Request* req);
@@ -101,13 +94,13 @@ void handle_client(void* vargp) {
         check++;
     }
 
-    sprintf(request, "%s %s %s\r\n", rq->method, rq->query, rq->version);
+    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
     sprintf(request, "%s%s", request, header);
 
-    if (get_from_cache(request, clientfd)) {
-        printf("%s", request);
+    if (get_from_cache(request_full, connfd)) {
+        printf("%s", request_full);
         printf("Got from Cache\n");
-        Close(clientfd);
+        Close(connfd);
         return;
     }
 
@@ -116,15 +109,6 @@ void handle_client(void* vargp) {
     get_from_server(request, clientfd, connfd);
     Close(clientfd);
     Close(connfd);
-}
-
-int get_from_cache(char request[MAXLINE], int clientfd) {
-    CachedItem* item = NULL;
-    if ((item = find(request, cache_list)) != 0) {
-        Rio_writen(clientfd, item->response, item->size);
-        return 1;
-    }
-    return 0;
 }
 
 void parse_request(char request[MAXLINE], Request* req) {
@@ -169,10 +153,10 @@ void initialize_struct(Request* req) {
 
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char response[MAXLINE];
-    size_t n;
     char cachebuf[MAX_OBJECT_SIZE];
+    size_t n;
     size_t total_size = 0;
-    char save = 0;
+    char save = 1;
     rio_t rio_to_server;
     Rio_readinitb(&rio_to_server, serverfd);
 
@@ -181,36 +165,42 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
         Rio_writen(clientfd, response, n);
         if (total_size + n < MAX_OBJECT_SIZE) {
             strncpy(cachebuf + total_size, response, n);
-            save = 1;
         }
+        else {
+            save = 0;
+        }
+        total_size += n;
+    }
+    if (n == -1 && errno == ECONNRESET) {
+        return;
     }
     if (save) {
         CachedItem* item = malloc(sizeof(CachedItem));
-        strncpy(item->name, request, strlen(request) + 1);
-        item->size = total_size + 1;
+        strncpy(item->request, request, strlen(request) + 1);
+        item->response_size = total_size + 1;
         item->response = malloc(sizeof(char) * (total_size + 1));
         strncpy(item->response, cachebuf, total_size + 1);
-        cache_insert(item, clist);
+        cache_insert(item, cache_list);
     }
 }
 
 CacheList* cache_init() {
     CacheList* cache = malloc(sizeof(CacheList));
-    cache->totalsize = 0;
+    cache->size = 0;
     cache->lock = malloc(sizeof(pthread_rwlock_t));
     pthread_rwlock_init(cache->lock, NULL);
-    cache->start = NULL;
+    cache->list = NULL;
     return cache;
 }
 
 void cache_insert(CachedItem* item, CacheList* cache) {
     pthread_rwlock_wrlock(cache->lock);
-    while ((item->size) + (cache->totalsize) >= MAX_CACHE_SIZE) {
+    while ((item->response_size) + (cache->size) >= MAX_CACHE_SIZE) {
         evict(cache);
     }
-    item->next = cache->start;
-    cache->start = item;
-    cache->totalsize += item->size;
+    item->next = cache->list;
+    cache->list = item;
+    cache->size += item->response_size;
     pthread_rwlock_unlock(cache->lock);
 }
 
@@ -228,7 +218,7 @@ void evict(CacheList* cache) {
         cache->size = 0;
     }
     else {
-        cache->size -= node->next->size;
+        cache->size -= node->next->response_size;
         free(node->next);
         node->next = NULL;
     }
@@ -240,7 +230,7 @@ CachedItem* find(char request[MAXLINE], CacheList* cache) {
     }
     pthread_rwlock_rdlock(cache->lock);
     CachedItem* ret = NULL;
-    CachedItem* node = cache->start;
+    CachedItem* node = cache->list;
     if (!strncmp(node->request, request, strlen(request))) {
         ret = node;
         node = NULL;
@@ -260,13 +250,13 @@ CachedItem* find(char request[MAXLINE], CacheList* cache) {
     return ret;
 }
 
-void move_to_front(CachedItem* cache, CacheList* list) {
-    pthread_rwlock_wrlock(list->lock);
-    CachedItem* tmp= cache->next;
-    cache->next = tmp->next;
-    tmp->next = list->start;
-    list->start = tmp;
-    pthread_rwlock_unlock(list->lock);
+void move_to_front(CachedItem* item, CacheList* cache) {
+    pthread_rwlock_wrlock(cache->lock);
+    CachedItem* target = item->next;
+    item->next = target->next;
+    target->next = cache->list;
+    cache->list = target;
+    pthread_rwlock_unlock(cache->lock);
 }
 
 void cache_destruct(CacheList* cache) {
@@ -279,4 +269,13 @@ void cache_destruct(CacheList* cache) {
     pthread_rwlock_destroy(cache->lock);
     free(cache->lock);
     free(cache);
+}
+
+int get_from_cache(char request[MAXLINE], int clientfd) {
+    CachedItem* item = NULL;
+    if ((item = find(request, cache_list)) != 0) {
+        Rio_writen(clientfd, item->response, item->response_size);
+        return 1;
+    }
+    return 0;
 }
