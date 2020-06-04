@@ -61,20 +61,21 @@ int main(int argc, char** argv)
 
     cache_list = cache_init();
 
-    int listenfd, clientfd;
-    socklen_t clientlen;
-    struct sockaddr_storage clientaddr;
-    char client_hostname[MAXLINE], client_port[MAXLINE];
-
+    int listenfd, connfd, clientlen;
+    struct sockaddr_in clientaddr;
+    char haddrp[MAXLINE];;
+    char client_port[MAXLINE];
     listenfd = Open_listenfd(argv[1]);
+
     while (1) {
-        clientlen = sizeof(struct sockaddr_storage);
-        //clientfd = malloc(sizeof(int));
-        clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
-        Getnameinfo((SA*)&clientaddr, clientlen, client_hostname, MAXLINE, client_port, MAXLINE, 0);
+        clientlen = sizeof(clientaddr);
+
+        connfd = Accept(listenfd, (SA*)&clientaddr, &clientlen); //connect
+        Getnameinfo((SA*)&clientaddr, clientlen, haddrp, MAXLINE, client_port, MAXLINE, 0);
 
         pthread_t tid;
-        Pthread_create(&tid, NULL, (void*)handle_client, &clientfd);
+        Pthread_create(&tid, NULL, (void*)handle_client, &connfd);
+
     }
     cache_destruct(cache_list);
     return 0;
