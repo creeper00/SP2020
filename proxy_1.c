@@ -61,7 +61,7 @@ int main(int argc, char** argv)
 
     cache_list = cache_init();
 
-    int listenfd, * clientfd;
+    int listenfd, clientfd;
     socklen_t clientlen;
     struct sockaddr_storage clientaddr;
     char client_hostname[MAXLINE], client_port[MAXLINE];
@@ -69,12 +69,12 @@ int main(int argc, char** argv)
     listenfd = Open_listenfd(argv[1]);
     while (1) {
         clientlen = sizeof(struct sockaddr_storage);
-        clientfd = malloc(sizeof(int));
-        *clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
+        //clientfd = malloc(sizeof(int));
+        clientfd = Accept(listenfd, (SA*)&clientaddr, &clientlen);
         Getnameinfo((SA*)&clientaddr, clientlen, client_hostname, MAXLINE, client_port, MAXLINE, 0);
-        printf("Connected to client: (%s, %s)\n", client_hostname, client_port);
+
         pthread_t tid;
-        Pthread_create(&tid, NULL, (void*)handle_client, clientfd);
+        Pthread_create(&tid, NULL, (void*)handle_client, &clientfd);
     }
     cache_destruct(cache_list);
     return 0;
@@ -97,11 +97,7 @@ void handle_client(void* vargp) {
     buf[0] = 0;
     while (strncmp(buf, "\r\n", 2)) {
         size_t n = Rio_readlineb(&rio_to_client, buf, MAXLINE);
-        if (n == -1 && errno == ECONNRESET) {
-            return;
-        }
-        lines++;
-        if (lines == 1) {
+        if (lines == 0) {
             parse_request(buf, req);
             sprintf(req->header, "%sHost: %s:%s\r\n", req->header, req->hostname, req->port);
             sprintf(req->header, "%s%s", req->header, user_agent_hdr);
@@ -111,11 +107,11 @@ void handle_client(void* vargp) {
         else if (strncmp(buf, "Proxy-Connection:", 17) && strncmp(buf, "Host:", 5) && strncmp(buf, "User-Agent:", 11)) {
             sprintf(req->header, "%s%s", req->header, buf);
         }
+        lines++;
     }
-    if (lines <= 0) {
-        return;
-    }
-    assemble_request(req, request_full);
+
+    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
+    sprintf(request, "%s%s", request, req->header);
 
     if (get_from_cache(request_full, clientfd)) {
         printf("%s", request_full);
@@ -177,10 +173,6 @@ void parse_request(char request[MAXLINE], Request* req) {
     sscanf("HTTP/1.0", "%s", req->version);
 }
 
-void assemble_request(Request* req, char request[MAXLINE]) {
-    sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
-    sprintf(request, "%s%s", request, req->header);
-}
 
 int get_from_cache(char request[MAXLINE], int clientfd) {
     CachedItem* item = NULL;
@@ -222,14 +214,6 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
         strncpy(item->response, cachebuf, total_size + 1);
         cache_insert(item, cache_list);
     }
-}
-
-void print_struct(Request* req) {
-    printf("method: %s\n", req->method);
-    printf("hostname: %s\n", req->hostname);
-    printf("port: %s\n", req->port);
-    printf("query: %s\n", req->query);
-    printf("version: %s\n", req->version);
 }
 
 /****** Cache functions ******/
