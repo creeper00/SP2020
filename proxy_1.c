@@ -177,25 +177,28 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char buff[MAX_OBJECT_SIZE];
     size_t n;
     size_t size = 0;
-    bool check = false;
+    int check = 0;
     rio_t rio;
     Rio_readinitb(&rio, serverfd);
 
     Rio_writen(serverfd, request, strlen(request));
     while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
-        if (size=size+n < MAX_OBJECT_SIZE) {
-            strncpy(buff + size, response, n);
-            check = true;
+	size+=n;
+	if (size < MAX_OBJECT_SIZE) {
+            if(check==0) snprintf(buff, n+1, "%s", response);
+	    else snprintf(buff, size+1, "%s%s", buff, response);
+            check = 1;
         }
     }
+    size++;
     if (n == -1 && errno == ECONNRESET) return;
     if (check) {
-        CachedItem* item;
-        strncpy(item->request, request, strlen(request) + 1);
-        item->response_size = total_size + 1;
-        //item->response = malloc(sizeof(char) * (total_size + 1));
-        strncpy(item->response, cachebuf, total_size + 1);
+        CachedItem* item = malloc(sizeof(CachedItem));
+        snprintf(item->request, strlen(request)+1, "%s", request);
+        item->response_size = size;
+        item->response = malloc(sizeof(char) * size);
+        snprintf(item->response, size, "%s", buff);
         cache_insert(item, cache_list);
     }
 }
@@ -223,6 +226,7 @@ void cache_insert(CachedItem* item, CacheList* cache) {
 }
 
 void evict(CacheList* cache) {
+    pthread_rwlock_wrlock(cache->lock);
     CachedItem* parent = cache->list;
     if (parent == NULL) return;
     if (parent->next == NULL) {
@@ -235,6 +239,7 @@ void evict(CacheList* cache) {
         node = parent->next;
     }
     parent->next = NULL;
+    pthread_rwlock_unlock(cache->lock);
     return;
 
 }
@@ -246,7 +251,7 @@ CachedItem* find(char request[MAXLINE], CacheList* cache) {
     CachedItem* parent = NULL;
     while (node!=NULL && strcmp(node->request, request)) {
         parent = node;
-        node = node->next
+        node = node->next;
     }
     pthread_rwlock_unlock(cache->lock);
     if (node != NULL && parent != NULL) {
