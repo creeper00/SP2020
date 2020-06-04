@@ -226,23 +226,20 @@ void cache_insert(CachedItem* item, CacheList* cache) {
 }
 
 void evict(CacheList* cache) {
-    CachedItem* node = cache->list;
-    while (node && node->next && node->next->next) {
-        node = node->next;
-    }
-    if (node == NULL) {
+    CachedItem* parent = cache->list;
+    if (parent == NULL) return;
+    if (parent->next == NULL) {
+        parent = NULL;
         return;
     }
+    CachedItem* node = parent->next;
+    while (node->next != NULL) {
+        parent = node;
+        node = parent->next;
+    }
+    parent->next = NULL;
+    return;
 
-    if (node->next == NULL) {
-        cache->list = NULL;
-        cache->size = 0;
-    }
-    else {
-        cache->size -= node->next->response_size;
-        free(node->next);
-        node->next = NULL;
-    }
 }
 
 CachedItem* find(char request[MAXLINE], CacheList* cache) {
