@@ -116,7 +116,7 @@ void handle_client(void* vargp) {
 
     CachedItem* item = find(request, cache_list);
     if (item != NULL) {
-        Rio_writen(clientfd, item->response, item->response_size);
+        Rio_writen(connfd, item->response, item->response_size);
         Close(connfd);
         return;
     }
@@ -179,10 +179,10 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     size_t total_size = 0;
     char save = 0;
     rio_t rio;
-    Rio_readinitb(&rio_to_server, serverfd);
+    Rio_readinitb(&rio, serverfd);
 
     Rio_writen(serverfd, request, strlen(request));
-    while ((n = Rio_readnb(&rio_to_server, response, MAXLINE)) > 0) {
+    while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
         if (total_size + n < MAX_OBJECT_SIZE) {
             strncpy(cachebuf + total_size, response, n);
@@ -243,29 +243,15 @@ void evict(CacheList* cache) {
 }
 
 CachedItem* find(char request[MAXLINE], CacheList* cache) {
-    if (cache->list == NULL) {
-        return NULL;
-    }
+    if (cache->list == NULL) return NULL;
     pthread_rwlock_rdlock(cache->lock);
-    CachedItem* ret = NULL;
     CachedItem* node = cache->list;
-    if (!strncmp(node->request, request, strlen(request))) {
-        ret = node;
-        node = NULL;
-    }
-    while (node && node->next) {
-        CachedItem* target = node->next;
-        if (!strncmp(target->request, request, strlen(request))) {
-            ret = target;
-            break;
-        }
-        node = node->next;
+    while (node!=NULL && strcmp(node->request, request)) {
+        node = node->next
     }
     pthread_rwlock_unlock(cache->lock);
-    if (ret != NULL && node != NULL) {
-        move_to_front(node, cache);
-    }
-    return ret;
+    if (node != NULL) move_to_front(node, cache);
+    return node;
 }
 
 void move_to_front(CachedItem* item, CacheList* cache) {
