@@ -83,21 +83,21 @@ int main(int argc, char** argv)
 
 void handle_client(void* vargp) {
     Pthread_detach(pthread_self());
-    int clientfd = *((int*)vargp);
-    free(vargp);
+    int connfd = *((int*)vargp);
+    //free(vargp);
 
     int lines = 0;
     int serverfd;
     char buf[MAXLINE];
-    char request_full[MAXLINE];
+    char request[MAXLINE];
     Request* req = malloc(sizeof(Request));
-    rio_t rio_to_client;
+    rio_t rio;
 
     initialize_struct(req);
-    Rio_readinitb(&rio_to_client, clientfd);
+    Rio_readinitb(&rio, connfd);
     buf[0] = 0;
     while (strncmp(buf, "\r\n", 2)) {
-        size_t n = Rio_readlineb(&rio_to_client, buf, MAXLINE);
+        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
         if (lines == 0) {
             parse_request(buf, req);
             sprintf(req->header, "%sHost: %s:%s\r\n", req->header, req->hostname, req->port);
@@ -114,22 +114,19 @@ void handle_client(void* vargp) {
     sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
     sprintf(request, "%s%s", request, req->header);
 
-    if (get_from_cache(request_full, clientfd)) {
-        printf("%s", request_full);
-        printf("Got from Cache\n");
-        Close(clientfd);
+    CachedItem* item = find(request, cache_list);
+    if (item != NULL) {
+        Rio_writen(clientfd, item->response, item->response_size);
+        Close(connfd);
         return;
     }
-    printf("%s", request_full);
+    printf("%s", request);
     serverfd = Open_clientfd(req->hostname, req->port);
-    if (serverfd < 0) {
-        printf("No connection to server\n");
-        return;
-    }
+    
     printf("Connected to server: (%s, %s)\n", req->hostname, req->port);
-    get_from_server(request_full, serverfd, clientfd);
+    get_from_server(request, serverfd, connfd);
     Close(serverfd);
-    Close(clientfd);
+    Close(connfd);
     free(req);
 }
 
@@ -175,22 +172,13 @@ void parse_request(char request[MAXLINE], Request* req) {
 }
 
 
-int get_from_cache(char request[MAXLINE], int clientfd) {
-    CachedItem* item = NULL;
-    if ((item = find(request, cache_list)) != 0) {
-        Rio_writen(clientfd, item->response, item->response_size);
-        return 1;
-    }
-    return 0;
-}
-
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char response[MAXLINE];
     char cachebuf[MAX_OBJECT_SIZE];
     size_t n;
     size_t total_size = 0;
-    char save = 1;
-    rio_t rio_to_server;
+    char save = 0;
+    rio_t rio;
     Rio_readinitb(&rio_to_server, serverfd);
 
     Rio_writen(serverfd, request, strlen(request));
@@ -198,9 +186,7 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
         Rio_writen(clientfd, response, n);
         if (total_size + n < MAX_OBJECT_SIZE) {
             strncpy(cachebuf + total_size, response, n);
-        }
-        else {
-            save = 0;
+            save = 1;
         }
         total_size += n;
     }
