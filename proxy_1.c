@@ -176,30 +176,26 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char response[MAXLINE];
     char buff[MAX_OBJECT_SIZE];
     size_t n;
-    size_t total_size = 0;
-    char save = 0;
+    size_t size = 0;
+    bool check = false;
     rio_t rio;
     Rio_readinitb(&rio, serverfd);
 
     Rio_writen(serverfd, request, strlen(request));
     while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
-        if (total_size + n < MAX_OBJECT_SIZE) {
-            if (save == 0) sprintf(buff, "%s", response);
-            else sprintf(buff, "%s%s", buff, response);
-             save = 1;
+        if (size=size+n < MAX_OBJECT_SIZE) {
+            strncpy(buff + size, response, n);
+            check = true;
         }
-        total_size += n;
     }
-    if (n == -1 && errno == ECONNRESET) {
-        return;
-    }
-    if (save) {
-        CachedItem* item = malloc(sizeof(CachedItem));
+    if (n == -1 && errno == ECONNRESET) return;
+    if (check) {
+        CachedItem* item;
         strncpy(item->request, request, strlen(request) + 1);
         item->response_size = total_size + 1;
-        item->response = malloc(sizeof(char) * (total_size + 1));
-        strncpy(item->response, buff, total_size + 1);
+        //item->response = malloc(sizeof(char) * (total_size + 1));
+        strncpy(item->response, cachebuf, total_size + 1);
         cache_insert(item, cache_list);
     }
 }
