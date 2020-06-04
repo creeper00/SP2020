@@ -246,20 +246,23 @@ CachedItem* find(char request[MAXLINE], CacheList* cache) {
     if (cache->list == NULL) return NULL;
     pthread_rwlock_rdlock(cache->lock);
     CachedItem* node = cache->list;
+    CachedItem* parent = NULL;
     while (node!=NULL && strcmp(node->request, request)) {
+        parent = node;
         node = node->next
     }
     pthread_rwlock_unlock(cache->lock);
-    if (node != NULL) move_to_front(node, cache);
+    if (node != NULL && parent != NULL) {
+        parent->next = node->next;
+        move_to_front(node, cache);
+    }
     return node;
 }
 
 void move_to_front(CachedItem* item, CacheList* cache) {
     pthread_rwlock_wrlock(cache->lock);
-    CachedItem* target = item->next;
-    item->next = target->next;
-    target->next = cache->list;
-    cache->list = target;
+    item->next = cache->list;
+    cache->list = item;
     pthread_rwlock_unlock(cache->lock);
 }
 
