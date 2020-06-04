@@ -174,7 +174,7 @@ void parse_request(char request[MAXLINE], Request* req) {
 
 void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     char response[MAXLINE];
-    char cachebuf[MAX_OBJECT_SIZE];
+    char buff[MAX_OBJECT_SIZE];
     size_t n;
     size_t total_size = 0;
     char save = 0;
@@ -185,8 +185,9 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
         if (total_size + n < MAX_OBJECT_SIZE) {
-            strncpy(cachebuf + total_size, response, n);
-            save = 1;
+            if (save == 0) sprintf(buff, "%s", response);
+            else sprintf(buff, "%s%s", buff, response);
+             save = 1;
         }
         total_size += n;
     }
@@ -198,7 +199,7 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
         strncpy(item->request, request, strlen(request) + 1);
         item->response_size = total_size + 1;
         item->response = malloc(sizeof(char) * (total_size + 1));
-        strncpy(item->response, cachebuf, total_size + 1);
+        strncpy(item->response, buff, total_size + 1);
         cache_insert(item, cache_list);
     }
 }
