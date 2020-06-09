@@ -97,7 +97,7 @@ void handle_client(void* vargp) {
     Rio_readinitb(&rio, connfd);
     buf[0] = 0;
     while (strncmp(buf, "\r\n", 2)) {
-        size_t n = Rio_readlineb(&rio, buf, MAXLINE);
+        if( Rio_readlineb(&rio, buf, MAXLINE)==-1 && errno == ECONNRESET) return;
         if (lines == 0) {
             parse_request(buf, req);
             sprintf(req->header, "%sHost: %s:%s\r\n", req->header, req->hostname, req->port);
@@ -248,14 +248,14 @@ CachedItem* find(char request[MAXLINE]) {
     pthread_rwlock_rdlock(clist->sem);
     CachedItem* first = clist->start;
     CachedItem* parent = NULL;
-    while (first != NULL && strcmp(node->name, request)) {
+    while (first != NULL && strcmp(first->name, request)) {
         parent = first;
         first = first->next;
     }
     pthread_rwlock_unlock(clist->sem);
     if (first != NULL && parent != NULL) {
         parent->next = first->next;
-        move_to_front(first, clist);
+        move_to_front(first);
     }
     return first;
 }
