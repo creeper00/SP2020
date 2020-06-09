@@ -45,7 +45,7 @@ void print_struct(Request* req);
 /****** Cache functions ******/
 void cache_init();
 void cache_insert(CachedItem* item);
-void evict(CacheList* cache);
+void evict();
 CachedItem* find(char request[MAXLINE], CacheList* cache);
 void move_to_front(CachedItem* item, CacheList* cache);
 void cache_destruct(CacheList* cache);
@@ -116,7 +116,7 @@ void handle_client(void* vargp) {
 
     CachedItem* item = find(request, clist);
     if (item != NULL) {
-        Rio_writen(connfd, item->response, item->response_size);
+        Rio_writen(connfd, item->response, item->size);
         Close(connfd);
         return;
     }
@@ -216,7 +216,7 @@ void cache_init() {
 void cache_insert(CachedItem* item) {
     pthread_rwlock_wrlock(clist->sem);
     while ((item->size) + (clist->tsize) >= MAX_CACHE_SIZE) {
-        evict(clist);
+        evict();
     }
     item->next = clist->start;
     clist->start = item;
@@ -224,9 +224,9 @@ void cache_insert(CachedItem* item) {
     pthread_rwlock_unlock(clist->sem);
 }
 
-void evict(CacheList* cache) {
-    pthread_rwlock_wrlock(cache->sem);
-    CachedItem* parent = cache->start;
+void evict() {
+    pthread_rwlock_wrlock(clist->sem);
+    CachedItem* parent = clist->start;
     if (parent == NULL) return;
     if (parent->next == NULL) {
         parent = NULL;
@@ -238,7 +238,7 @@ void evict(CacheList* cache) {
         node = parent->next;
     }
     parent->next = NULL;
-    pthread_rwlock_unlock(cache->sem);
+    pthread_rwlock_unlock(clist->sem);
     return;
 
 }
