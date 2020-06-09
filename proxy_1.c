@@ -20,19 +20,19 @@ typedef struct {
 typedef struct CachedItem CachedItem;
 
 struct CachedItem {
-    char request[MAXLINE];
-    size_t response_size;
+    char name[MAXLINE];
+    size_t size;
     char* response;
     struct CachedItem* next;
 };
 
 typedef struct {
-    size_t size;
-    pthread_rwlock_t* lock;
-    CachedItem* list;
+    size_t tsize;
+    pthread_rwlock_t* sem;
+    CachedItem* start;
 } CacheList;
 
-CacheList* cache_list = NULL;
+CacheList* clist = NULL;
 
 void handle_client(void* vargp);
 void initialize_struct(Request* req);
@@ -122,7 +122,7 @@ void handle_client(void* vargp) {
     }
     printf("%s", request);
     serverfd = Open_clientfd(req->hostname, req->port);
-    
+
     printf("Connected to server: (%s, %s)\n", req->hostname, req->port);
     get_from_server(request, serverfd, connfd);
     Close(serverfd);
@@ -184,10 +184,10 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     Rio_writen(serverfd, request, strlen(request));
     while ((n = Rio_readnb(&rio, response, MAXLINE)) > 0) {
         Rio_writen(clientfd, response, n);
-	size+=n;
-	if (size < MAX_OBJECT_SIZE) {
-            if(check==0) snprintf(buff, n+1, "%s", response);
-	    else snprintf(buff, size+1, "%s%s", buff, response);
+        size += n;
+        if (size < MAX_OBJECT_SIZE) {
+            if (check == 0) snprintf(buff, n + 1, "%s", response);
+            else snprintf(buff, size + 1, "%s%s", buff, response);
             check = 1;
         }
     }
@@ -195,11 +195,11 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
     if (n == -1 && errno == ECONNRESET) return;
     if (check) {
         CachedItem* item = malloc(sizeof(CachedItem));
-        snprintf(item->request, strlen(request)+1, "%s", request);
-        item->response_size = size;
+        snprintf(item->name, strlen(request) + 1, "%s", request);
+        item->size = size;
         item->response = malloc(sizeof(char) * size);
         snprintf(item->response, size, "%s", buff);
-        cache_insert(item, cache_list);
+        cache_insert(item, clist);
     }
 }
 
@@ -207,27 +207,27 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
 
 CacheList* cache_init() {
     CacheList* cache = malloc(sizeof(CacheList));
-    cache->size = 0;
-    cache->lock = malloc(sizeof(pthread_rwlock_t));
-    pthread_rwlock_init(cache->lock, NULL);
-    cache->list = NULL;
+    cache->tsize = 0;
+    cache->sem = malloc(sizeof(pthread_rwlock_t));
+    pthread_rwlock_init(cache->sem, NULL);
+    cache->start = NULL;
     return cache;
 }
 
 void cache_insert(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->lock);
-    while ((item->response_size) + (cache->size) >= MAX_CACHE_SIZE) {
+    pthread_rwlock_wrlock(cache->sem);
+    while ((item->size) + (cache->tsize) >= MAX_CACHE_SIZE) {
         evict(cache);
     }
-    item->next = cache->list;
-    cache->list = item;
-    cache->size += item->response_size;
-    pthread_rwlock_unlock(cache->lock);
+    item->next = cache->start;
+    cache->start = item;
+    cache->tsize += item->size;
+    pthread_rwlock_unlock(cache->sem);
 }
 
 void evict(CacheList* cache) {
-    pthread_rwlock_wrlock(cache->lock);
-    CachedItem* parent = cache->list;
+    pthread_rwlock_wrlock(cache->sem);
+    CachedItem* parent = cache->start;
     if (parent == NULL) return;
     if (parent->next == NULL) {
         parent = NULL;
@@ -239,21 +239,21 @@ void evict(CacheList* cache) {
         node = parent->next;
     }
     parent->next = NULL;
-    pthread_rwlock_unlock(cache->lock);
+    pthread_rwlock_unlock(cache->sem);
     return;
 
 }
 
 CachedItem* find(char request[MAXLINE], CacheList* cache) {
-    if (cache->list == NULL) return NULL;
-    pthread_rwlock_rdlock(cache->lock);
-    CachedItem* node = cache->list;
+    if (cache->start == NULL) return NULL;
+    pthread_rwlock_rdlock(cache->sem);
+    CachedItem* node = cache->start;
     CachedItem* parent = NULL;
-    while (node!=NULL && strcmp(node->request, request)) {
+    while (node != NULL && strcmp(node->name, request)) {
         parent = node;
         node = node->next;
     }
-    pthread_rwlock_unlock(cache->lock);
+    pthread_rwlock_unlock(cache->sem);
     if (node != NULL && parent != NULL) {
         parent->next = node->next;
         move_to_front(node, cache);
@@ -262,20 +262,20 @@ CachedItem* find(char request[MAXLINE], CacheList* cache) {
 }
 
 void move_to_front(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->lock);
-    item->next = cache->list;
-    cache->list = item;
-    pthread_rwlock_unlock(cache->lock);
+    pthread_rwlock_wrlock(cache->sem);
+    item->next = cache->start;
+    cache->start = item;
+    pthread_rwlock_unlock(cache->sem);
 }
 
 void cache_destruct(CacheList* cache) {
-    CachedItem* node = cache->list;
+    CachedItem* node = cache->start;
     while (node) {
         CachedItem* next = node->next;
         free(node);
         node = next;
     }
-    pthread_rwlock_destroy(cache->lock);
-    free(cache->lock);
+    pthread_rwlock_destroy(cache->sem);
+    free(cache->sem);
     free(cache);
 }
