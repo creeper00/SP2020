@@ -44,7 +44,7 @@ void print_struct(Request* req);
 
 /****** Cache functions ******/
 void cache_init();
-void cache_insert(CachedItem* item, CacheList* cache);
+void cache_insert(CachedItem* item);
 void evict(CacheList* cache);
 CachedItem* find(char request[MAXLINE], CacheList* cache);
 void move_to_front(CachedItem* item, CacheList* cache);
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
         Pthread_create(&tid, NULL, (void*)handle_client, &connfd);
 
     }
-    cache_destruct(cache_list);
+    cache_destruct(clist);
     return 0;
 }
 
@@ -114,7 +114,7 @@ void handle_client(void* vargp) {
     sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
     sprintf(request, "%s%s", request, req->header);
 
-    CachedItem* item = find(request, cache_list);
+    CachedItem* item = find(request, clist);
     if (item != NULL) {
         Rio_writen(connfd, item->response, item->response_size);
         Close(connfd);
@@ -199,7 +199,7 @@ void get_from_server(char request[MAXLINE], int serverfd, int clientfd) {
         item->size = size;
         item->response = malloc(sizeof(char) * size);
         snprintf(item->response, size, "%s", buff);
-        cache_insert(item, clist);
+        cache_insert(item);
     }
 }
 
