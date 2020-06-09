@@ -213,15 +213,15 @@ void cache_init() {
     clist->start = NULL;
 }
 
-void cache_insert(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->sem);
-    while ((item->size) + (cache->tsize) >= MAX_CACHE_SIZE) {
-        evict(cache);
+void cache_insert(CachedItem* item) {
+    pthread_rwlock_wrlock(clist->sem);
+    while ((item->size) + (clist->tsize) >= MAX_CACHE_SIZE) {
+        evict(clist);
     }
-    item->next = cache->start;
-    cache->start = item;
-    cache->tsize += item->size;
-    pthread_rwlock_unlock(cache->sem);
+    item->next = clist->start;
+    clist->start = item;
+    clist->tsize += item->size;
+    pthread_rwlock_unlock(clist->sem);
 }
 
 void evict(CacheList* cache) {
