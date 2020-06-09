@@ -246,18 +246,18 @@ void evict() {
 CachedItem* find(char request[MAXLINE]) {
     if (clist->start == NULL) return NULL;
     pthread_rwlock_rdlock(clist->sem);
-    CachedItem* node = clist->start;
+    CachedItem* first = clist->start;
     CachedItem* parent = NULL;
-    while (node != NULL && strcmp(node->name, request)) {
-        parent = node;
-        node = node->next;
+    while (first != NULL && strcmp(node->name, request)) {
+        parent = first;
+        first = first->next;
     }
     pthread_rwlock_unlock(clist->sem);
-    if (node != NULL && parent != NULL) {
-        parent->next = node->next;
-        move_to_front(node, clist);
+    if (first != NULL && parent != NULL) {
+        parent->next = first->next;
+        move_to_front(first, clist);
     }
-    return node;
+    return first;
 }
 
 void move_to_front(CachedItem* item) {
@@ -268,11 +268,11 @@ void move_to_front(CachedItem* item) {
 }
 
 void cache_destruct() {
-    CachedItem* node = clist->start;
-    while (node) {
-        CachedItem* next = node->next;
-        free(node);
-        node = next;
+    CachedItem* check = clist->start;
+    while (check!=NULL) {
+        CachedItem* next = check->next;
+        free(check);
+        check = next;
     }
     pthread_rwlock_destroy(clist->sem);
     free(clist->sem);
