@@ -46,9 +46,9 @@ void print_struct(Request* req);
 void cache_init();
 void cache_insert(CachedItem* item);
 void evict();
-CachedItem* find(char request[MAXLINE], CacheList* cache);
-void move_to_front(CachedItem* item, CacheList* cache);
-void cache_destruct(CacheList* cache);
+CachedItem* find(char request[MAXLINE]);
+void move_to_front(CachedItem* item);
+void cache_destruct();
 
 int main(int argc, char** argv)
 {
@@ -77,7 +77,7 @@ int main(int argc, char** argv)
         Pthread_create(&tid, NULL, (void*)handle_client, &connfd);
 
     }
-    cache_destruct(clist);
+    cache_destruct();
     return 0;
 }
 
@@ -114,7 +114,7 @@ void handle_client(void* vargp) {
     sprintf(request, "%s %s %s\r\n", req->method, req->query, req->version);
     sprintf(request, "%s%s", request, req->header);
 
-    CachedItem* item = find(request, clist);
+    CachedItem* item = find(request);
     if (item != NULL) {
         Rio_writen(connfd, item->response, item->size);
         Close(connfd);
@@ -243,38 +243,38 @@ void evict() {
 
 }
 
-CachedItem* find(char request[MAXLINE], CacheList* cache) {
-    if (cache->start == NULL) return NULL;
-    pthread_rwlock_rdlock(cache->sem);
-    CachedItem* node = cache->start;
+CachedItem* find(char request[MAXLINE]) {
+    if (clist->start == NULL) return NULL;
+    pthread_rwlock_rdlock(clist->sem);
+    CachedItem* node = clist->start;
     CachedItem* parent = NULL;
     while (node != NULL && strcmp(node->name, request)) {
         parent = node;
         node = node->next;
     }
-    pthread_rwlock_unlock(cache->sem);
+    pthread_rwlock_unlock(clist->sem);
     if (node != NULL && parent != NULL) {
         parent->next = node->next;
-        move_to_front(node, cache);
+        move_to_front(node, clist);
     }
     return node;
 }
 
-void move_to_front(CachedItem* item, CacheList* cache) {
-    pthread_rwlock_wrlock(cache->sem);
-    item->next = cache->start;
-    cache->start = item;
-    pthread_rwlock_unlock(cache->sem);
+void move_to_front(CachedItem* item) {
+    pthread_rwlock_wrlock(clist->sem);
+    item->next = clist->start;
+    clist->start = item;
+    pthread_rwlock_unlock(clist->sem);
 }
 
-void cache_destruct(CacheList* cache) {
-    CachedItem* node = cache->start;
+void cache_destruct() {
+    CachedItem* node = clist->start;
     while (node) {
         CachedItem* next = node->next;
         free(node);
         node = next;
     }
-    pthread_rwlock_destroy(cache->sem);
-    free(cache->sem);
-    free(cache);
+    pthread_rwlock_destroy(clist->sem);
+    free(clist->sem);
+    free(clist);
 }
